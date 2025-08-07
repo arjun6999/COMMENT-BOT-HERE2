@@ -4,20 +4,8 @@ import os
 import random
 import re
 from urllib.parse import urlparse, parse_qs
-from flask import Flask
 
-# ===== Flask setup for live deployment check =====
-app = Flask(__name__)
-
-@app.route("/")
-def home():
-    return "🔥 Facebook Auto Comment Bot is running..."
-
-if __name__ == "__main__":
-    import threading
-    threading.Thread(target=lambda: app.run(host="0.0.0.0", port=5000)).start()
-
-# ===== Load files =====
+# Load files
 def read_file(filename):
     with open(filename, "r", encoding="utf-8") as f:
         return [line.strip() for line in f if line.strip()]
@@ -33,6 +21,7 @@ def get_post_id_from_url(url):
         elif "fbid=" in url:
             return parse_qs(urlparse(url).query)["fbid"][0]
         else:
+            # fallback using meta tags
             html = requests.get(url).text
             match = re.search(r'content="https://www.facebook.com/.*/posts/(\d+)"', html)
             if match:
@@ -41,12 +30,14 @@ def get_post_id_from_url(url):
         print(f"[❌] Error extracting post ID: {e}")
     return None
 
+# Load config
 tokens = read_file("token.txt")
 comments = read_file("comments.txt")
 haters = read_file("hatersname.txt")
-interval = int(read_file("time.txt")[0])  # Now interpreted as seconds
+interval = int(read_file("time.txt")[0])  # seconds now
 post_urls = read_file("postlink.txt")
 
+# Extract post IDs
 post_ids = []
 for url in post_urls:
     post_id = get_post_id_from_url(url)
@@ -68,17 +59,19 @@ def comment_on_post(token, post_id, message):
     try:
         r = requests.post(url, data=payload)
         if r.status_code == 200:
-            print(f"[✅] Commented: {message}")
+            print(f"[✅] Commented on post {post_id} | Message: {message}")
         else:
-            print(f"[❌] Error: {r.text}")
+            print(f"[❌] Failed on post {post_id} | Error: {r.text}")
     except Exception as e:
-        print(f"[⚠️] Exception: {e}")
+        print(f"[⚠️] Exception on post {post_id}: {e}")
 
 print("🔥 Auto Comment Bot Started 🔥")
+print(f"[⏱️] Interval set to {interval} seconds\n")
 
 while True:
     for token in tokens:
         for post_id in post_ids:
             comment = f"{random.choice(haters)} {random.choice(comments)}"
             comment_on_post(token, post_id, comment)
-            time.sleep(interval)  # Time now in seconds
+            print(f"[🕒] Waiting {interval} seconds before next comment...\n")
+            time.sleep(interval)
