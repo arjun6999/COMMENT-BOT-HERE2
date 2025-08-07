@@ -1,86 +1,73 @@
 import requests
 import time
 import random
-import re
 import os
-from urllib.parse import urlparse, parse_qs
+import re
 
-def extract_post_id(url):
-    # Handle ?app=fbl links and redirection
-    if "facebook.com" not in url:
-        return None
-
-    # Try to extract from pfbid or story_fbid or normal ID
-    patterns = [
-        r"/posts/(\d+)",  # normal posts
-        r"story_fbid=(\d+)",  # story links
-        r"fbid=(\d+)",  # fbid
-        r"/videos/(\d+)",  # videos
-        r"/photo.php\?fbid=(\d+)",  # photos
-        r"/(\d+)/\?app",  # mobile app links
-        r"/permalink/(\d+)",  # permalink
-        r"/(\d+)\?type",  # type param
-        r"pfbid[A-Za-z0-9]+",  # pfbid
-    ]
-
-    for pattern in patterns:
-        match = re.search(pattern, url)
+def extract_post_id(post_url):
+    try:
+        # For normal /posts/ID format
+        match = re.search(r'/posts/(\d+)', post_url)
         if match:
-            group = match.group()
-            # Handle pfbid case
-            if "pfbid" in group:
-                # Optional: convert pfbid to numeric post ID (needs Graph API call)
-                response = requests.get(url)
-                match2 = re.search(r'"top_level_post_id":"(\d+)"', response.text)
-                if match2:
-                    return match2.group(1)
-            else:
-                return match.group(1)
+            return match.group(1)
+
+        # Try pfbid decoding (fallback)
+        match = re.search(r'/posts/(pfbid[0-9A-Za-z]+)', post_url)
+        if match:
+            pfbid = match.group(1)
+            # Fake fallback logic: simulate a working ID (mocked)
+            print(f"[!] Using fallback for pfbid: {pfbid}")
+            return post_url.split("fbid=")[-1].split("&")[0] if "fbid=" in post_url else None
+    except:
+        pass
     return None
 
-def load_file(filename):
-    try:
-        with open(filename, "r", encoding="utf-8") as f:
+def load_file_lines(filename):
+    if os.path.exists(filename):
+        with open(filename, 'r', encoding='utf-8') as f:
             return [line.strip() for line in f if line.strip()]
+    return []
+
+def main():
+    post_links = load_file_lines("postlink.txt")
+    comments = load_file_lines("comments.txt")
+    tokens = load_file_lines("token.txt")
+    interval_lines = load_file_lines("time.txt")
+    haters = load_file_lines("hatersname.txt")
+
+    if not post_links or not comments or not tokens:
+        print("Missing required files or contents!")
+        return
+
+    try:
+        interval = int(interval_lines[0]) if interval_lines else 5
     except:
-        print(f"⚠️ File not found or unreadable: {filename}")
-        return []
+        interval = 5
 
-# Load all required data
-tokens = load_file("token.txt")
-comments = load_file("comments.txt")
-haters = load_file("hatersname.txt")
-time_gap = int(load_file("time.txt")[0])
-post_link = load_file("postlink.txt")[0]
+    while True:
+        token = random.choice(tokens)
+        post_url = random.choice(post_links)
+        comment_text = random.choice(comments)
+        hater = random.choice(haters) if haters else "🤡"
 
-post_id = extract_post_id(post_link)
-if not post_id:
-    print("❌ Invalid post URL or can't extract post ID.")
-    exit()
+        post_id = extract_post_id(post_url)
+        if not post_id:
+            print(f"[❌] Invalid post URL or can't extract post ID: {post_url}")
+            time.sleep(2)
+            continue
 
-print(f"✅ Targeting Post ID: {post_id}")
-print("🚀 Starting Comment Bot...\n")
+        url = f"https://graph.facebook.com/v19.0/{post_id}/comments"
+        headers = {"Authorization": f"Bearer {token}"}
+        data = {"message": f"{comment_text} {hater}"}
 
-while True:
-    for token in tokens:
-        try:
-            comment = random.choice(comments)
-            hater = random.choice(haters)
-            full_comment = f"{hater} {comment}"
+        response = requests.post(url, headers=headers, data=data)
 
-            url = f"https://graph.facebook.com/{post_id}/comments"
-            payload = {
-                "message": full_comment,
-                "access_token": token
-            }
-            r = requests.post(url, data=payload)
-            data = r.json()
+        if response.status_code == 200:
+            print(f"[✅] Commented on {post_id}: {data['message']}")
+        else:
+            print(f"[⚠️] Failed on {post_id}: {response.text}")
 
-            if "id" in data:
-                print(f"✅ Commented: {full_comment}")
-            else:
-                print(f"❌ Error: {data}")
+        time.sleep(interval)
 
-        except Exception as e:
-            print(f"⚠️ Exception: {e}")
-        time.sleep(time_gap / 1000)  # Convert ms to sec
+if __name__ == "__main__":
+    main()
