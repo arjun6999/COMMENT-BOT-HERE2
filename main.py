@@ -1,73 +1,75 @@
 import requests
 import time
-import random
 import os
+import random
 import re
+from urllib.parse import urlparse, parse_qs
 
-def extract_post_id(post_url):
+# Load files
+def read_file(filename):
+    with open(filename, "r", encoding="utf-8") as f:
+        return [line.strip() for line in f if line.strip()]
+
+def get_post_id_from_url(url):
     try:
-        # For normal /posts/ID format
-        match = re.search(r'/posts/(\d+)', post_url)
-        if match:
-            return match.group(1)
-
-        # Try pfbid decoding (fallback)
-        match = re.search(r'/posts/(pfbid[0-9A-Za-z]+)', post_url)
-        if match:
-            pfbid = match.group(1)
-            # Fake fallback logic: simulate a working ID (mocked)
-            print(f"[!] Using fallback for pfbid: {pfbid}")
-            return post_url.split("fbid=")[-1].split("&")[0] if "fbid=" in post_url else None
-    except:
-        pass
+        if "/posts/" in url:
+            return url.split("/posts/")[1].split("/")[0]
+        elif "/permalink/" in url:
+            return url.split("/permalink/")[1].split("/")[0]
+        elif "/photos/" in url:
+            return re.search(r"a\.\d+/\d+", url).group().split("/")[1]
+        elif "fbid=" in url:
+            return parse_qs(urlparse(url).query)["fbid"][0]
+        else:
+            # fallback using meta tags
+            html = requests.get(url).text
+            match = re.search(r'content="https://www.facebook.com/.*/posts/(\d+)"', html)
+            if match:
+                return match.group(1)
+    except Exception as e:
+        print(f"[❌] Error extracting post ID: {e}")
     return None
 
-def load_file_lines(filename):
-    if os.path.exists(filename):
-        with open(filename, 'r', encoding='utf-8') as f:
-            return [line.strip() for line in f if line.strip()]
-    return []
+# Load config
+tokens = read_file("token.txt")
+comments = read_file("comments.txt")
+haters = read_file("hatersname.txt")
+interval = int(read_file("time.txt")[0])
+post_urls = read_file("postlink.txt")
 
-def main():
-    post_links = load_file_lines("postlink.txt")
-    comments = load_file_lines("comments.txt")
-    tokens = load_file_lines("token.txt")
-    interval_lines = load_file_lines("time.txt")
-    haters = load_file_lines("hatersname.txt")
+# Extract post IDs
+post_ids = []
+for url in post_urls:
+    post_id = get_post_id_from_url(url)
+    if post_id:
+        post_ids.append(post_id)
+    else:
+        print(f"[⚠️] Failed to extract post ID from: {url}")
 
-    if not post_links or not comments or not tokens:
-        print("Missing required files or contents!")
-        return
+if not post_ids:
+    print("[❌] No valid post IDs found. Exiting.")
+    exit()
 
+def comment_on_post(token, post_id, message):
+    url = f"https://graph.facebook.com/{post_id}/comments"
+    payload = {
+        "message": message,
+        "access_token": token
+    }
     try:
-        interval = int(interval_lines[0]) if interval_lines else 5
-    except:
-        interval = 5
-
-    while True:
-        token = random.choice(tokens)
-        post_url = random.choice(post_links)
-        comment_text = random.choice(comments)
-        hater = random.choice(haters) if haters else "🤡"
-
-        post_id = extract_post_id(post_url)
-        if not post_id:
-            print(f"[❌] Invalid post URL or can't extract post ID: {post_url}")
-            time.sleep(2)
-            continue
-
-        url = f"https://graph.facebook.com/v19.0/{post_id}/comments"
-        headers = {"Authorization": f"Bearer {token}"}
-        data = {"message": f"{comment_text} {hater}"}
-
-        response = requests.post(url, headers=headers, data=data)
-
-        if response.status_code == 200:
-            print(f"[✅] Commented on {post_id}: {data['message']}")
+        r = requests.post(url, data=payload)
+        if r.status_code == 200:
+            print(f"[✅] Commented: {message}")
         else:
-            print(f"[⚠️] Failed on {post_id}: {response.text}")
+            print(f"[❌] Error: {r.text}")
+    except Exception as e:
+        print(f"[⚠️] Exception: {e}")
 
-        time.sleep(interval)
+print("🔥 Auto Comment Bot Started 🔥")
 
-if __name__ == "__main__":
-    main()
+while True:
+    for token in tokens:
+        for post_id in post_ids:
+            comment = f"{random.choice(haters)} {random.choice(comments)}"
+            comment_on_post(token, post_id, comment)
+            time.sleep(interval / 1000)  # time.txt in ms
