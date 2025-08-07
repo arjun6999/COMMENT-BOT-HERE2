@@ -4,8 +4,20 @@ import os
 import random
 import re
 from urllib.parse import urlparse, parse_qs
+from flask import Flask
 
-# Load files
+# ===== Flask setup for live deployment check =====
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "🔥 Facebook Auto Comment Bot is running..."
+
+if __name__ == "__main__":
+    import threading
+    threading.Thread(target=lambda: app.run(host="0.0.0.0", port=5000)).start()
+
+# ===== Load files =====
 def read_file(filename):
     with open(filename, "r", encoding="utf-8") as f:
         return [line.strip() for line in f if line.strip()]
@@ -21,7 +33,6 @@ def get_post_id_from_url(url):
         elif "fbid=" in url:
             return parse_qs(urlparse(url).query)["fbid"][0]
         else:
-            # fallback using meta tags
             html = requests.get(url).text
             match = re.search(r'content="https://www.facebook.com/.*/posts/(\d+)"', html)
             if match:
@@ -30,14 +41,12 @@ def get_post_id_from_url(url):
         print(f"[❌] Error extracting post ID: {e}")
     return None
 
-# Load config
 tokens = read_file("token.txt")
 comments = read_file("comments.txt")
 haters = read_file("hatersname.txt")
-interval = int(read_file("time.txt")[0])
+interval = int(read_file("time.txt")[0])  # Now interpreted as seconds
 post_urls = read_file("postlink.txt")
 
-# Extract post IDs
 post_ids = []
 for url in post_urls:
     post_id = get_post_id_from_url(url)
@@ -72,4 +81,4 @@ while True:
         for post_id in post_ids:
             comment = f"{random.choice(haters)} {random.choice(comments)}"
             comment_on_post(token, post_id, comment)
-            time.sleep(interval / 1000)  # time.txt in ms
+            time.sleep(interval)  # Time now in seconds
