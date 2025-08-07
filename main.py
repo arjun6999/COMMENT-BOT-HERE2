@@ -3,6 +3,7 @@ import time
 import os
 import random
 from urllib.parse import urlparse, parse_qs
+from flask import Flask
 
 # Auto create folders
 os.makedirs("logs", exist_ok=True)
@@ -72,7 +73,6 @@ def run_comment_bot():
         token = tokens[token_index % len(tokens)]
         comment = random.choice(comments)
 
-        # If hater list exists, randomly pick a name
         if hater_names:
             hater = random.choice(hater_names)
             comment = comment.replace("{name}", hater)
@@ -80,7 +80,25 @@ def run_comment_bot():
         comment_on_post(token, post_id, comment)
 
         token_index += 1
+        print(f"⏳ Waiting {interval} seconds before next comment...\n")
         time.sleep(interval)
 
+# ---------- Flask Live Server Part ----------
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "🔥 Facebook Auto Comment Bot is Live!"
+
 if __name__ == "__main__":
-    run_comment_bot()
+    import threading
+
+    # Start the comment bot in a separate thread
+    bot_thread = threading.Thread(target=run_comment_bot)
+    bot_thread.daemon = True
+    bot_thread.start()
+
+    # Start Flask server
+    port = int(os.environ.get("PORT", 3000))
+    print(f"🌐 Bot live on http://localhost:{port}")
+    app.run(host="0.0.0.0", port=port)
