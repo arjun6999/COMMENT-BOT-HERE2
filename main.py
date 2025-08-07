@@ -1,78 +1,86 @@
 import requests
 import time
-import os
-from urllib.parse import urlparse
+import random
 import re
+import os
+from urllib.parse import urlparse, parse_qs
 
-# Helper: Extract Post ID from Facebook URL
 def extract_post_id(url):
-    try:
-        if "posts/" in url:
-            return url.split("posts/")[1].split("/")[0]
-        match = re.search(r"fbid=(\d+)", url)
+    # Handle ?app=fbl links and redirection
+    if "facebook.com" not in url:
+        return None
+
+    # Try to extract from pfbid or story_fbid or normal ID
+    patterns = [
+        r"/posts/(\d+)",  # normal posts
+        r"story_fbid=(\d+)",  # story links
+        r"fbid=(\d+)",  # fbid
+        r"/videos/(\d+)",  # videos
+        r"/photo.php\?fbid=(\d+)",  # photos
+        r"/(\d+)/\?app",  # mobile app links
+        r"/permalink/(\d+)",  # permalink
+        r"/(\d+)\?type",  # type param
+        r"pfbid[A-Za-z0-9]+",  # pfbid
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, url)
         if match:
-            return match.group(1)
-    except Exception as e:
-        print("Error extracting post ID:", e)
+            group = match.group()
+            # Handle pfbid case
+            if "pfbid" in group:
+                # Optional: convert pfbid to numeric post ID (needs Graph API call)
+                response = requests.get(url)
+                match2 = re.search(r'"top_level_post_id":"(\d+)"', response.text)
+                if match2:
+                    return match2.group(1)
+            else:
+                return match.group(1)
     return None
 
-# Helper: Log message
-def log(msg):
-    print(msg)
-    with open("logs.txt", "a", encoding="utf-8") as f:
-        f.write(msg + "\n")
-
-# Load files
-try:
-    with open("token.txt", "r") as f:
-        token = f.read().strip()
-    with open("comments.txt", "r", encoding="utf-8") as f:
-        comments = [c.strip() for c in f.readlines() if c.strip()]
-    with open("postlink.txt", "r") as f:
-        post_url = f.read().strip()
-    with open("time.txt", "r") as f:
-        delay = int(f.read().strip()) / 1000
-    with open("hatersname.txt", "r", encoding="utf-8") as f:
-        hater = f.read().strip()
-except Exception as e:
-    log(f"[ERROR] Failed to load files: {e}")
-    exit()
-
-# Extract post ID
-post_id = extract_post_id(post_url)
-if not post_id:
-    log("[ERROR] Invalid post URL or can't extract post ID.")
-    exit()
-
-# Comment loop
-index = 0
-while True:
-    comment = comments[index % len(comments)]
-    final_comment = comment.replace("{name}", hater)
-
-    url = f"https://graph.facebook.com/{post_id}/comments"
-    payload = {
-        "message": final_comment,
-        "access_token": token
-    }
-
+def load_file(filename):
     try:
-        response = requests.post(url, data=payload)
-        data = response.json()
+        with open(filename, "r", encoding="utf-8") as f:
+            return [line.strip() for line in f if line.strip()]
+    except:
+        print(f"⚠️ File not found or unreadable: {filename}")
+        return []
 
-        if "id" in data:
-            log(f"[✅] Commented: {final_comment}")
-        else:
-            log(f"[❌] Failed: {data}")
-            if "error" in data:
-                err_msg = data["error"].get("message", "")
-                if "temporarily blocked" in err_msg.lower():
-                    log("[⚠️] Blocked temporarily. Sleeping for 10 minutes.")
-                    time.sleep(600)
-                    continue
-        index += 1
-        time.sleep(delay)
+# Load all required data
+tokens = load_file("token.txt")
+comments = load_file("comments.txt")
+haters = load_file("hatersname.txt")
+time_gap = int(load_file("time.txt")[0])
+post_link = load_file("postlink.txt")[0]
 
-    except Exception as e:
-        log(f"[💥] Exception occurred: {e}")
-        time.sleep(delay)
+post_id = extract_post_id(post_link)
+if not post_id:
+    print("❌ Invalid post URL or can't extract post ID.")
+    exit()
+
+print(f"✅ Targeting Post ID: {post_id}")
+print("🚀 Starting Comment Bot...\n")
+
+while True:
+    for token in tokens:
+        try:
+            comment = random.choice(comments)
+            hater = random.choice(haters)
+            full_comment = f"{hater} {comment}"
+
+            url = f"https://graph.facebook.com/{post_id}/comments"
+            payload = {
+                "message": full_comment,
+                "access_token": token
+            }
+            r = requests.post(url, data=payload)
+            data = r.json()
+
+            if "id" in data:
+                print(f"✅ Commented: {full_comment}")
+            else:
+                print(f"❌ Error: {data}")
+
+        except Exception as e:
+            print(f"⚠️ Exception: {e}")
+        time.sleep(time_gap / 1000)  # Convert ms to sec
