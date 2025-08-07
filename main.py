@@ -4,6 +4,14 @@ import os
 import random
 import re
 from urllib.parse import urlparse, parse_qs
+from flask import Flask
+
+# Flask app to keep bot alive
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "🔥 Facebook Auto Comment Bot is Running 🔥"
 
 # Load files
 def read_file(filename):
@@ -21,7 +29,6 @@ def get_post_id_from_url(url):
         elif "fbid=" in url:
             return parse_qs(urlparse(url).query)["fbid"][0]
         else:
-            # fallback using meta tags
             html = requests.get(url).text
             match = re.search(r'content="https://www.facebook.com/.*/posts/(\d+)"', html)
             if match:
@@ -34,7 +41,7 @@ def get_post_id_from_url(url):
 tokens = read_file("token.txt")
 comments = read_file("comments.txt")
 haters = read_file("hatersname.txt")
-interval = int(read_file("time.txt")[0])  # seconds now
+interval = int(read_file("time.txt")[0])  # seconds
 post_urls = read_file("postlink.txt")
 
 # Extract post IDs
@@ -68,10 +75,21 @@ def comment_on_post(token, post_id, message):
 print("🔥 Auto Comment Bot Started 🔥")
 print(f"[⏱️] Interval set to {interval} seconds\n")
 
-while True:
-    for token in tokens:
-        for post_id in post_ids:
-            comment = f"{random.choice(haters)} {random.choice(comments)}"
-            comment_on_post(token, post_id, comment)
-            print(f"[🕒] Waiting {interval} seconds before next comment...\n")
-            time.sleep(interval)
+# Background loop
+def run_bot():
+    while True:
+        for token in tokens:
+            for post_id in post_ids:
+                comment = f"{random.choice(haters)} {random.choice(comments)}"
+                comment_on_post(token, post_id, comment)
+                print(f"[🕒] Waiting {interval} seconds before next comment...\n")
+                time.sleep(interval)
+
+# Start bot in background
+import threading
+threading.Thread(target=run_bot).start()
+
+# Start Flask server
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
