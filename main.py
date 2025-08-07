@@ -76,7 +76,7 @@ def run_bot():
             for post_id in post_ids:
                 comment = f"{random.choice(haters)} {random.choice(comments)}"
                 comment_on_post(token, post_id, comment)
-                time.sleep(interval / 1000)  # time.txt in ms 
+                time.sleep(interval)  # ✅ time.txt interpreted in SECONDS now
 
 bot_thread = threading.Thread(target=run_bot)
 bot_thread.start()
